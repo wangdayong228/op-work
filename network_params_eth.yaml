@@ -60,6 +60,12 @@ optimism_package:
   global_node_selectors: {}
   global_tolerations: []
   persistent: false
+  observability:
+    # Whether or not to configure observability (e.g. prometheus)
+    enabled: true
+    # Default prometheus configuration
+    prometheus_params:
+      image: "prom/prometheus:v2.45.0"
 ethereum_package:
   participants:
   - el_type: geth

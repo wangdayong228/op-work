@@ -159,9 +159,9 @@ cast balance --rpc-url $op_l2_rpc  0x8943545177806ED17B9F23F0a21ee5948eCaa776
 
 
 # MISC
-op-deployer 部署合约时，如下错误时合约版本不一致导致的。
+op-deployer 部署合约时，如下错误是合约版本不一致导致的。
 
-下面错误是在本地而不是 kurtosis运行 op-deployer时报的错，可能是由于 本地的bedrock-contracts 版本与 kurtosis 里使用的不一致
+下面错误是在**本地**而不是 kurtosis运行 op-deployer时报的错，可能是由于 本地的bedrock-contracts 版本与 kurtosis 里使用的不一致
 ```sh
 WARN [03-21|10:28:59.948] callframe                                depth=1 byte4=0x522bb704 addr=0xcd6473be2560AcE97068062df850E6f6e6871066 callsite= label=SetDisputeGameImpl
 WARN [03-21|10:28:59.948] Revert                                   addr=0xcd6473be2560AcE97068062df850E6f6e6871066 label=SetDisputeGameImpl err="execution reverted" revertMsg="unrecognized 4 byte signature: 6425666b" depth=1
@@ -179,6 +179,7 @@ WARN [03-21|10:28:59.948] Revert                                   addr=0xcd6473
 6. 默认op-batcher发送 batch 到 l1 时为 blob 交易，修改 `network_params.yaml`中 op-batcher 启动参数配置`--data-availability-type=calldata`
 7. op-batcher 发送 calldata 交易到 l1 时 gas 计算为 `op-geth/core/state_transition.go FloorDataGas`， 计算结果小于 conflux 链实际需要，修改为 2 倍解决。(optimize 的 go.mod 需要设置 replace 再 build)
 8. op-challenger 用到了 batch rpc，适配 rpc proxy 解决中
+9. 在 47.83.15.87 机器上， prometheus 服务启动超时，修改[prometheus.yml.tmpl](https://github.com/wangdayong228/prometheus-package/blob/main/static-files/prometheus.yml.tmpl)模板，删除 `fallback_scrape_protocol` 解决。
 
 
 

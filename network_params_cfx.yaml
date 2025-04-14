@@ -59,8 +59,8 @@ optimism_package:
 external_l1_network_params:
   network_id: "1025"
   rpc_kind: standard
-  el_rpc_url: https://opgrafana.conflux123.xyz/rpc
-  el_ws_url: ws://opgrafana.conflux123.xyz/rpc
-  cl_rpc_url: https://opgrafana.conflux123.xyz/rpc
+  el_rpc_url: http://172.17.0.1:3031
+  el_ws_url: ws://172.17.0.1:3031
+  cl_rpc_url: http://172.17.0.1:3031
   priv_key: "0x850643a0224065ecce3882673c21f56bcf6eef86274cc21cadff15930b59fc8c"
   
