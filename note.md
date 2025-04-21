@@ -14,7 +14,11 @@ op-deployer apply 时相关配置为 intent struct，default 值见 `optimism/op
 
 部署合约时使用的配置文件见 `kurtosis files download op-eth op-deployer-configs ./tmp/op-deployer-configs` 中input-merge.json
 
-我修改提现等待时间是直接修改了 contract_deployer.star:113 文件。增加了
+其中 intent.toml 和 state.json 都是 op-deploy init命令创建的。 op-deploy apply 时会根据 state.json 创建 genisis.json, rollup.json 等文件用于其他组件启动。 其中 rollup.json 就包含 l2 出块时间。 [参看](https://devdocs.optimism.io/op-deployer/reference-guide/architecture.html)
+
+
+**配置文件修改**
+1. 提现等待时间是直接修改了 contract_deployer.star:113 文件。增加了
 ```json
         "globalDeployOverrides": {
             "proofMaturityDelaySeconds": 12,
@@ -22,6 +26,8 @@ op-deployer apply 时相关配置为 intent struct，default 值见 `optimism/op
             "dangerouslyAllowCustomDisputeParameters": True,
         }
 ```
+
+2. 设置配置文件 network_params_cfx.yaml 参数来调整l2出块时间：`optimism_package.chains[0].participants[0].network_params.seconds_per_slot: 1`
 
 
 
@@ -62,10 +68,31 @@ Private Key 10: 0x850643a0224065ecce3882673c21f56bcf6eef86274cc21cadff15930b59fc
 - optimism_syncStatus ：查询同步状态
 - admin_sequencerActive： 查询 sequencer 是否活动
 
+# 调试 op-node
+
+对 op-node 增加了调试功能，分别修改了 docker file 和 starlark 文件。
+
+部署 kurtosis 后，本地需要先开始 ssh 隧道，建立本地端口到服务器端口的端口转发。
+
+1. 在本地运行如下命令，其中2345是本地 vscode 的配置端口，33162 是远端服务器的 delve 服务端口（不是 docker容器的 delve服务端口，是映射到服务器宿主机的端口）
+```sh
+ssh -L 2345:localhost:33162 root@47.83.15.87 -N
+```
+2. 本地 vscode 启动调试，配置见 `optimism/.vsode/launch.json`
+
+# 关键代码
+
+1. [max_sequencer_drift](https://specs.optimism.io/protocol/derivation.html): 用于限制 sequencer 能领先 L1 的最大时间长度。也就是 L2 head 能领先 L1 orgin 的最大时长。[maxSequencerDriftFjord](https://github.com/wangdayong228/optimism/blob/284913be5aafcf69d18e3508c5e44da7df9fcd76/op-node/rollup/chain_spec.go#L31)为常量，在Fjord分叉后，就不能通过配置读取了，固定值为 1800 秒。
+
+
 # 修改
 
 1. 针对 block parent 等检查修改了 op-node/ op-batcher/ op-proposer; 部署 kurtosis 前确保创建了这些 docker image，命令为`make op-node-docker`,`make op-batcher-docker`,`make op-proposer-docker`
 2. op-geth(branch:fork/v1.101503.2-rc.1-fix):  set FloorDataGas to double
+3. op-node 修改 [maxSequencerDriftFjord](https://github.com/wangdayong228/optimism/blob/284913be5aafcf69d18e3508c5e44da7df9fcd76/op-node/rollup/chain_spec.go#L31)用于调试。(已恢复到 1800)
+
+
+
 
 # 启动 jsonrpc-proxy
 
@@ -96,6 +123,9 @@ JSONRPC_URL=http://47.83.15.87 PORTS=3031 CORRECT_BLOCK_HASH=true pm2 restart ec
 ```
 
 # kurtosis 中需要充钱的地址
+
+cfx-espace-l1-genesis-admin: 9a6d3ba2b0c7514b16a006ee605055d71b9edfad183aeb2d9790e9d4ccced471 0x0e768D12395C8ABFDEdF7b1aEB0Dd1D27d5E2A7F
+
 **配置中l1发交易使用地址**
 
 privateKey: 0x850643a0224065ecce3882673c21f56bcf6eef86274cc21cadff15930b59fc8c
@@ -180,6 +210,7 @@ WARN [03-21|10:28:59.948] Revert                                   addr=0xcd6473
 7. op-batcher 发送 calldata 交易到 l1 时 gas 计算为 `op-geth/core/state_transition.go FloorDataGas`， 计算结果小于 conflux 链实际需要，修改为 2 倍解决。(optimize 的 go.mod 需要设置 replace 再 build)
 8. op-challenger 用到了 batch rpc，适配 rpc proxy 解决中
 9. 在 47.83.15.87 机器上， prometheus 服务启动超时，修改[prometheus.yml.tmpl](https://github.com/wangdayong228/prometheus-package/blob/main/static-files/prometheus.yml.tmpl)模板，删除 `fallback_scrape_protocol` 解决。
+10. 启动一段时间后无法打包交易（包括L1跨链L2， L2 普通交易），发现问题所在点为设置 L2 的 L1 origin 时获取到的 nextOrign 始终是一个固定值。根本原因是l1产生区块太快，而l2出块时间是 2 秒，而每个块在更新 l1 origin时，只是+1递增的更新，就会导致差距越来越大。所以现在修改l1跟l2的出块都为 1 秒。 l2通过配置完成：`optimism_package.chains[0].participants[0].network_params.seconds_per_slot: 1`
 
 
 
