@@ -1,0 +1,60 @@
+# l1 rpc
+server {
+    listen 21000;
+
+    location / {
+        proxy_pass {{l1_rpc_port}};
+    }
+
+}
+
+
+# l2 op-geth rpc
+server {
+    listen 21001;
+
+    location / {
+        proxy_pass {{l2_op_geth_rpc_port}};
+    }
+
+}
+
+# l2 op-node rpc
+server {
+    listen 21002;
+
+    location / {
+        proxy_pass {{l2_op_node_rpc_port}};
+    }
+
+}
+
+# grafana
+server {
+    listen 21100;
+
+    location / {
+        proxy_pass {{grafana_port}};
+    }
+
+}
+
+# prometheus
+server {
+    listen 21200;
+
+    location / {
+        proxy_pass {{prometheus_port}};
+    }
+
+}
+
+# blockscoutop
+server {
+    listen 21300;
+
+    location / {
+        proxy_pass {{blockscout_port}};
+    }
+
+}

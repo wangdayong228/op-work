@@ -12,68 +12,16 @@ fi
 
 echo "使用 Enclave: $ENCLAVE_NAME"
 
-template="
-# l1 rpc
-server {
-    listen 22000;
+# 从模板文件读取内容
+TEMPLATE_FILE="${ENCLAVE_NAME}.template"
+if [ ! -f "$TEMPLATE_FILE" ]; then
+  echo "错误：模板文件 $TEMPLATE_FILE 不存在！"
+  exit 1
+fi
 
-    location / {
-        proxy_pass {{l1_rpc_port}};
-    }
-
-}
-
-
-# l2 op-geth rpc
-server {
-    listen 22001;
-
-    location / {
-        proxy_pass {{l2_op_geth_rpc_port}};
-    }
-
-}
-
-# l2 op-node rpc
-server {
-    listen 22002;
-
-    location / {
-        proxy_pass {{l2_op_node_rpc_port}};
-    }
-
-}
-
-# grafana
-server {
-    listen 22100;
-
-    location / {
-        proxy_pass {{grafana_port}};
-    }
-
-}
-
-# prometheus
-server {
-    listen 22200;
-
-    location / {
-        proxy_pass {{prometheus_port}};
-    }
-
-}
-
-# blockscoutop
-server {
-    listen 22300;
-
-    location / {
-        proxy_pass {{blockscout_port}};
-    }
-
-}
-"
+# 读取模板文件内容
+template=$(cat "$TEMPLATE_FILE")
+echo "已加载模板文件: $TEMPLATE_FILE"
 
 # 获取 kurtosis 中服务的 HTTP 端口
 GRAFANA_PORT=$(kurtosis port print ${ENCLAVE_NAME} grafana http)
