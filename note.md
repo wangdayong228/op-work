@@ -205,7 +205,7 @@ WARN [03-21|10:28:59.948] Revert                                   addr=0xcd6473
 2. block hash 校验失败问题，通过 rpc proxy 适配解决
 3. eth_getBalance 等 rpc 参数为 block hash 时，conflux 不支持，通过 rpc proxy 适配解决
 4. op-node 中会检查  L1 block 的 parent hash，通过修改代码跳过检查解决，需要重新 `make op-node-docker`
-5. op-batcher 由于 blobGasFee 为 nil 导致 panic，设置为 nil 则返回1，log见[op-batch panic]
+5. op-batcher 由于 blobGasFee 为 nil 导致 panic，设置为 nil 则返回1，log见 [op-batch panic](#op-batch-panic)
 6. 默认op-batcher发送 batch 到 l1 时为 blob 交易，修改 `network_params.yaml`中 op-batcher 启动参数配置`--data-availability-type=calldata`
 7. op-batcher 发送 calldata 交易到 l1 时 gas 计算为 `op-geth/core/state_transition.go FloorDataGas`， 计算结果小于 conflux 链实际需要，修改为 2 倍解决。(optimize 的 go.mod 需要设置 replace 再 build)
 8. op-challenger 用到了 batch rpc，适配 rpc proxy 解决中
