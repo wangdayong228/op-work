@@ -2,6 +2,7 @@
 
 # 设置错误时退出
 set -e
+set -x
 
 # 处理命令行参数 - 只接受一个参数作为 ENCLAVE_NAME
 if [ $# -eq 1 ]; then
@@ -24,10 +25,15 @@ template=$(cat "$TEMPLATE_FILE")
 echo "已加载模板文件: $TEMPLATE_FILE"
 
 # 获取 kurtosis 中服务的 HTTP 端口
+L1_RPC_PORT="http://127.0.0.1:3031"
+
+if [ "$ENCLAVE_NAME" != "op-cfx" ]; then
+    L1_RPC_PORT="http://"$(kurtosis port print ${ENCLAVE_NAME} el-1-geth-teku rpc)
+fi
+
 GRAFANA_PORT=$(kurtosis port print ${ENCLAVE_NAME} grafana http)
 PROMETHEUS_PORT=$(kurtosis port print ${ENCLAVE_NAME} prometheus http)
 BLOCKSCOUT_PORT=$(kurtosis port print ${ENCLAVE_NAME} op-blockscoutop-kurtosis http)
-L1_RPC_PORT="http://127.0.0.1:3031"
 L2_OP_GETH_RPC_PORT=$(kurtosis port print ${ENCLAVE_NAME} op-el-1-op-geth-op-node-op-kurtosis rpc)
 L2_OP_NODE_RPC_PORT=$(kurtosis port print ${ENCLAVE_NAME} op-cl-1-op-node-op-geth-op-kurtosis http)
 

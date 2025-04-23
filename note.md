@@ -124,6 +124,7 @@ JSONRPC_URL=http://47.83.15.87 PORTS=3031 CORRECT_BLOCK_HASH=true pm2 restart ec
 
 # kurtosis 中需要充钱的地址
 
+## deploy-cfx 使用外部 l1 时
 cfx-espace-l1-genesis-admin: 9a6d3ba2b0c7514b16a006ee605055d71b9edfad183aeb2d9790e9d4ccced471 0x0e768D12395C8ABFDEdF7b1aEB0Dd1D27d5E2A7F
 
 **配置中l1发交易使用地址**
@@ -135,9 +136,12 @@ address: 0x65D08a056c17Ae13370565B04cF77D2AfA1cB9FA
 
 手动充 1000eth 到 0xd8f3183def51a987222d845be228e0bbb932c222 
 
-**kurtosis脚本中 hard code 了 faucet 账户**
-
+**kurtosis脚本中 hard code 的 faucet 账户**
 手动充 1000eth 到 0xafF0CA253b97e54440965855cec0A8a2E2399896
+
+## 通用
+
+**kurtosis脚本中 hard code 了 faucet 账户**
 
 代码： `optimism-package/static_files/scripts/fund.sh:62`
 - l1FaucetAddress: 0xafF0CA253b97e54440965855cec0A8a2E2399896
