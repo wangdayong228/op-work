@@ -67,6 +67,7 @@ Private Key 10: 0x850643a0224065ecce3882673c21f56bcf6eef86274cc21cadff15930b59fc
 
 - optimism_syncStatus ：查询同步状态
 - admin_sequencerActive： 查询 sequencer 是否活动
+- optimism_rollupConfig: 查看 l2 配置
 
 # 调试 op-node
 
