@@ -84,14 +84,19 @@ ssh -L 2345:localhost:33162 root@47.83.15.87 -N
 # 关键代码
 
 1. [max_sequencer_drift](https://specs.optimism.io/protocol/derivation.html): 用于限制 sequencer 能领先 L1 的最大时间长度。也就是 L2 head 能领先 L1 orgin 的最大时长。[maxSequencerDriftFjord](https://github.com/wangdayong228/optimism/blob/284913be5aafcf69d18e3508c5e44da7df9fcd76/op-node/rollup/chain_spec.go#L31)为常量，在Fjord分叉后，就不能通过配置读取了，固定值为 1800 秒。
-
+2. withdraw 交易的机制与 OptimismPortal 合约的版本`OptimismPortal.version()`有关，版本小于 3 时使用 l2OutputOracle 获取输出根，>=3 时使用 DisputeGameFactory 机制。（具体细节还未深究）
+3. 争议游戏使用合约为：PermissionedDisputeGame
+4. op-deploy init 创建部署配置，kurtosis 使用的op-deploy版本为v0.0.12, 执行的命令为`op-deployer init --intent-config-type custom --l1-chain-id $L1_CHAIN_ID --l2-chain-ids 2151908 --workdir /network-data`
 
 # 修改
 
 1. 针对 block parent 等检查修改了 op-node/ op-batcher/ op-proposer; 部署 kurtosis 前确保创建了这些 docker image，命令为`make op-node-docker`,`make op-batcher-docker`,`make op-proposer-docker`
 2. op-geth(branch:fork/v1.101503.2-rc.1-fix):  set FloorDataGas to double
 3. op-node 修改 [maxSequencerDriftFjord](https://github.com/wangdayong228/optimism/blob/284913be5aafcf69d18e3508c5e44da7df9fcd76/op-node/rollup/chain_spec.go#L31)用于调试。(已恢复到 1800)
-
+4. 调整 l2->l1 提现时间：
+  - 待设置 DISPUTE_GAME_FINALITY_DELAY_SECONDS：争议解决后依然需要等待的时间
+  - PROOF_MATURITY_DELAY_SECONDS： 提款交易被证明后到可以被最终确认之间必须等待的时间延迟，默认值是 3.5 天
+  - FaultDisputeGame.MAX_CLOCK_DURATION：现在值为 3.5 天
 
 
 
