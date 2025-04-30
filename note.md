@@ -12,20 +12,16 @@
 
 op-deployer apply 时相关配置为 intent struct，default 值见 `optimism/op-e2e/config/init.go:413`
 
-部署合约时使用的配置文件见 `kurtosis files download op-eth op-deployer-configs ./tmp/op-deployer-configs` 中input-merge.json
+部署合约时使用的配置文件见 `kurtosis files download op-eth op-deployer-configs ./tmp/op-deployer-configs` 中 intent-merge.json，对应解构体为[Intent](https://github.com/ethereum-optimism/optimism/blob/a79e8cc06aa354511983fafcb6d71ab04cdfadbc/op-deployer/pkg/deployer/state/intent.go#L41)
 
-其中 intent.toml 和 state.json 都是 op-deploy init命令创建的。 op-deploy apply 时会根据 state.json 创建 genisis.json, rollup.json 等文件用于其他组件启动。 其中 rollup.json 就包含 l2 出块时间。 [参看](https://devdocs.optimism.io/op-deployer/reference-guide/architecture.html)
+其中 intent.toml 和 state.json 都是 op-deploy init命令创建的。 op-deploy apply 时会根据 state.json 创建 genisis.json, rollup.json 等文件用于其他组件启动。 其中 rollup.json 就包含 l2 出块时间。 参看[介绍](https://devdocs.optimism.io/op-deployer/reference-guide/architecture.html)
+
+[GlobalDeployOverrides](https://github.com/ethereum-optimism/optimism/blob/7b534540e5bc3e470cf15d8293a40b51590aab8e/op-e2e/config/init.go#L377)是用于覆盖默认 Intent 中的配置
 
 
 **配置文件修改**
-1. 提现等待时间是直接修改了 contract_deployer.star:113 文件。增加了
-```json
-        "globalDeployOverrides": {
-            "proofMaturityDelaySeconds": 12,
-            "faultGameWithdrawalDelay": 12,
-            "dangerouslyAllowCustomDisputeParameters": True,
-        }
-```
+1. 提现等待时间是直接修改了 
+
 
 2. 设置配置文件 network_params_cfx.yaml 参数来调整l2出块时间：`optimism_package.chains[0].participants[0].network_params.seconds_per_slot: 1`
 
@@ -93,11 +89,89 @@ ssh -L 2345:localhost:33162 root@47.83.15.87 -N
 1. 针对 block parent 等检查修改了 op-node/ op-batcher/ op-proposer; 部署 kurtosis 前确保创建了这些 docker image，命令为`make op-node-docker`,`make op-batcher-docker`,`make op-proposer-docker`
 2. op-geth(branch:fork/v1.101503.2-rc.1-fix):  set FloorDataGas to double
 3. op-node 修改 [maxSequencerDriftFjord](https://github.com/wangdayong228/optimism/blob/284913be5aafcf69d18e3508c5e44da7df9fcd76/op-node/rollup/chain_spec.go#L31)用于调试。(已恢复到 1800)
-4. 调整 l2->l1 提现时间：
-  - 待设置 DISPUTE_GAME_FINALITY_DELAY_SECONDS：争议解决后依然需要等待的时间
-  - PROOF_MATURITY_DELAY_SECONDS： 提款交易被证明后到可以被最终确认之间必须等待的时间延迟，默认值是 3.5 天
-  - FaultDisputeGame.MAX_CLOCK_DURATION：现在值为 3.5 天
 
+## 调整 l2->l1 提现时间
+涉及的合约 `additional dispute game` 和 `permissioned dispute game`
+
+`permissioned dispute game` 场景： l2->l1 跨链提现交易
+`additional dispute game` 场景： *可能*是消息跨链（不太清楚）
+
+涉及的合约变量：
+  - OptimismPortal2.sol 合约 DISPUTE_GAME_FINALITY_DELAY_SECONDS：争议解决后依然需要等待的时间
+  - OptimismPortal2.sol 合约 PROOF_MATURITY_DELAY_SECONDS： 提款交易被证明后到可以被最终确认之间必须等待的时间延迟，默认值是 3.5 天
+  - FaultDisputeGame.sol 合约 MAX_CLOCK_DURATION：默认值为 3.5 天
+
+### 修改 MAX_CLOCK_DURATION 相关参数
+MAX_CLOCK_DURATION 涉及的代码：
+MAX_CLOCK_DURATION为部署 `additional dispute game` 和 `permissioned dispute game` 合约 implements 时通过构造函数传入的，该变量是imuttable的，所以部署时是以 **bytecode 硬编码**的。
+
+相关合约代码为
+```solidity
+        uint256 splitDepthExtension = uint256(_params.clockExtension.raw()) * 2;
+        uint256 maxGameDepthExtension =
+            uint256(_params.clockExtension.raw()) + uint256(_params.vm.oracle().challengePeriod());
+        uint256 maxClockExtension = Math.max(splitDepthExtension, maxGameDepthExtension);
+
+        // The maximum clock extension must fit into a uint64.
+        if (maxClockExtension > type(uint64).max) revert InvalidClockExtension();
+
+        // The maximum clock extension may not be greater than the maximum clock duration.
+        if (uint64(maxClockExtension) > _params.maxClockDuration.raw()) revert InvalidClockExtension();
+```
+
+这里检查条件可简化为： `maxClockExtension > maxClockExtension = Math.max(clockExtension*2, clockExtension+vm.oracle().challengePeriod)`。
+所以需要同时设置 `clockExtension` 和 `vm.oracle().challengePeriod`。
+而要设置 challengePeriod ，则需要部署自定义oracle合约，而不使用 PreImageOracle合约，go 代码参看[这里](https://github.com/ethereum-optimism/optimism/blob/6823d6768266a4a8ddf435cc2d91bd17ca13e345/op-deployer/pkg/deployer/pipeline/dispute_games.go#L58)。设置 [`ChainIntent.AdditionalDisputeGames[n]`](https://github.com/ethereum-optimism/optimism/blob/ce2ce43b35baa693de75750fc38261aed0ad0b5f/op-deployer/pkg/deployer/state/chain_intent.go#L49) 结构的 useCustomOracle 为 true。
+
+修改 `additional dispute game` 的方式为设置 dangerousAdditionalDisputeGames（见 contract_deploy.star）：
+```python
+        intent_chain.update(
+            {
+                "dangerousAdditionalDisputeGames": [
+                    {
+                        "respectedGameType": 0,
+                        "faultGameAbsolutePrestate": absolute_prestate,
+                        "faultGameMaxDepth": 73,
+                        "faultGameSplitDepth": 30,
+                        # "faultGameClockExtension": 10800,
+                        # "faultGameMaxClockDuration": 302400,
+                        "dangerouslyAllowCustomDisputeParameters": True,
+                        "vmType": "CANNON1",
+                        "useCustomOracle": True,
+                        "oracleMinProposalSize": 0,
+                        "oracleChallengePeriodSeconds": 0,
+                        # "OracleChallengePeriodSeconds": 1,
+                        "makeRespected": False,
+                        "faultGameClockExtension": 12,
+                        "faultGameMaxClockDuration": 24,
+                    }
+                ],
+            }
+        )
+```
+
+而修改 `permissioned dispute game` 则需要通过修改 `globalDeployOverrides`（见 contract_deploy.star）：
+
+```json
+        "globalDeployOverrides": {
+            ...
+            "faultGameClockExtension": 12,
+            "faultGameMaxClockDuration": 24,
+            "preimageOracleChallengePeriod": 0,
+        }
+```
+
+### 修改 DISPUTE_GAME_FINALITY_DELAY_SECONDS，PROOF_MATURITY_DELAY_SECONDS
+
+contract_deployer.star:113 文件增加了
+```json
+        "globalDeployOverrides": {
+            "proofMaturityDelaySeconds": 12,
+            "faultGameWithdrawalDelay": 12,
+            "dangerouslyAllowCustomDisputeParameters": True,
+            ...
+        }
+```
 
 
 # 启动 jsonrpc-proxy
@@ -223,6 +297,8 @@ WARN [03-21|10:28:59.948] Revert                                   addr=0xcd6473
 10. 启动一段时间后无法打包交易（包括L1跨链L2， L2 普通交易），发现问题所在点为设置 L2 的 L1 origin 时获取到的 nextOrign 始终是一个固定值。根本原因是l1产生区块太快，而l2出块时间是 2 秒，而每个块在更新 l1 origin时，只是+1递增的更新，就会导致差距越来越大。所以现在修改l1跟l2的出块都为 1 秒。 l2通过配置完成：`optimism_package.chains[0].participants[0].network_params.seconds_per_slot: 1`
 
 
+# 需要注意的点
+1. L2->L1 提现时，是将 OptimismPortal 合约的ETH 转账给接收者，如果余额不足，该合约调用也不会失败，值是会发一个事件，且不能再提现。 所以需要先从 L1->L2，再提现。（或者充值 eth到 OptimismPortal）
 
 # kurtosis 常用命令
 ```sh
