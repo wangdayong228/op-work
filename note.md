@@ -20,11 +20,8 @@ op-deployer apply 时相关配置为 intent struct，default 值见 `optimism/op
 
 
 **配置文件修改**
-1. 提现等待时间是直接修改了 
-
-
+1. 提现等待时间见[这里](#调整-l2-l1-提现时间)
 2. 设置配置文件 network_params_cfx.yaml 参数来调整l2出块时间：`optimism_package.chains[0].participants[0].network_params.seconds_per_slot: 1`
-
 
 
 ## 配置使用外部l1
