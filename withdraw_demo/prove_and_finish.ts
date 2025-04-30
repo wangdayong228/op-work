@@ -28,7 +28,7 @@ async function proveAndFinish(withdrawTxHash: `0x${string}`) {
     console.log('📄 输出详情:');
     console.log(inspect(output, { depth: null, colors: true }));
     console.log('📄 提现详情:');
-    console.log(inspect(withdrawal, { depth: null, colors: true }));
+  console.log(inspect(withdrawal, { depth: null, colors: true }));
   
     console.log('\n--- 5. 构建证明参数 ---');
     // Build parameters to prove the withdrawal on the L2.

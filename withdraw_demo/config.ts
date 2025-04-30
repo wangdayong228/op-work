@@ -79,7 +79,7 @@ const customL2 = defineChain({
         ...chainConfig.contracts,
         disputeGameFactory: {
             [sourceId]: {
-                address: '0x71d9cc7dc50c6d2c3f6d9e086a577d06f48969e8',
+                address: process.env.dispute_game_factory! as `0x${string}`,
             },
         },
         l2OutputOracle: {
@@ -93,12 +93,12 @@ const customL2 = defineChain({
         },
         portal: {
             [sourceId]: {
-                address: '0xae0896e26482ef9b92735aa8a490447b04c32673',
+                address: process.env.portal! as `0x${string}`,
             },
         },
         l1StandardBridge: {
             [sourceId]: {
-                address: '0x5b8f683222b3e059283828a4e91c215d77dcc058',
+                address: process.env.l1_standard_bridge! as `0x${string}`,
             },
         },
     },

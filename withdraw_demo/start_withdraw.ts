@@ -33,4 +33,4 @@ async function startWithdraw(amount: bigint) {
     console.log(`📝 L2 提现交易已发送, 交易哈希: ${hash}`);
 }  
 
-startWithdraw(parseEther('0.001'));
+startWithdraw(parseEther('1'));
