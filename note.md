@@ -91,15 +91,18 @@ ssh -L 2345:localhost:33162 root@47.83.15.87 -N
 3. op-node 修改 [maxSequencerDriftFjord](https://github.com/wangdayong228/optimism/blob/284913be5aafcf69d18e3508c5e44da7df9fcd76/op-node/rollup/chain_spec.go#L31)用于调试。(已恢复到 1800)
 
 ## 调整 l2->l1 提现时间
-涉及的合约 `additional dispute game` 和 `permissioned dispute game`
+影响提现时间的合约有 `FaultDisputeGame`, `PermissonedDisputeGame` 和 `OptimismPortal`
 
-`permissioned dispute game` 场景： l2->l1 跨链提现交易
-`additional dispute game` 场景： *可能*是消息跨链（不太清楚）
+不同的 [GameType](https://github.com/ethereum-optimism/optimism/blob/c023165711746bece8341b492a9d831a183c89cd/packages/contracts-bedrock/src/dispute/lib/Types.sol#L50)，会使用不同的`DisputeGame`合约，可以通过 `gameImpls(uint32)` 查询对应的合约实现。跨链交易对应的 GameType为 1， 使用的是 `PermissonedDisputeGame`。
+
+`PermissonedDisputeGame` 场景： l2->l1 跨链提现交易
+`additional FaultDisputeGame` 场景： *可能*是消息跨链（不太清楚）
 
 涉及的合约变量：
   - OptimismPortal2.sol 合约 DISPUTE_GAME_FINALITY_DELAY_SECONDS：争议解决后依然需要等待的时间
   - OptimismPortal2.sol 合约 PROOF_MATURITY_DELAY_SECONDS： 提款交易被证明后到可以被最终确认之间必须等待的时间延迟，默认值是 3.5 天
-  - FaultDisputeGame.sol 合约 MAX_CLOCK_DURATION：默认值为 3.5 天
+  - FaultDisputeGame.sol 合约 MAX_CLOCK_DURATION：游戏必须至少运行这么长时间才能被解析。默认值为 3.5 天
+  - FaultDisputeGame.sol 合约 CLOCK_EXTENSION：响应者参加游戏的时间扩展（可加时长度）
 
 ### 修改 MAX_CLOCK_DURATION 相关参数
 MAX_CLOCK_DURATION 涉及的代码：
