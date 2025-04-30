@@ -8,3 +8,5 @@ op-deployer inspect l2-semvers --workdir ./dist/op-deployer-configs 2151908 > ./
 op-deployer inspect deploy-config --workdir ./dist/op-deployer-configs 2151908 > ./dist/inspect/deploy-config.json
 op-deployer inspect rollup --workdir ./dist/op-deployer-configs 2151908 > ./dist/inspect/rollup.json
 op-deployer inspect genesis --workdir ./dist/op-deployer-configs 2151908 > ./dist/inspect/genesis.json
+
+echo "导出完成，请查看 ./dist/inspect 目录下的文件"
