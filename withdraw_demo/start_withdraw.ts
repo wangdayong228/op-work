@@ -29,8 +29,8 @@ async function startWithdraw(amount: bigint) {
   
     console.log('\n--- 2. 在 L2 执行提现发起交易 ---');
     // Execute the initiate withdrawal transaction on the L2.
-    const hash = await walletClientL2.initiateWithdrawal(args);
-    console.log(`📝 L2 提现交易已发送, 交易哈希: ${hash}`);
+    const hash = await walletClientL2.initiateWithdrawal(args); 
+    console.log(`📝 L2 提现交易已发送, 交易哈希: ${hash}, 时间: ${new Date()}`);
 }  
 
 startWithdraw(parseEther('1'));
