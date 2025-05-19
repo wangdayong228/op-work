@@ -61,7 +61,7 @@ Private Key 10: 0x850643a0224065ecce3882673c21f56bcf6eef86274cc21cadff15930b59fc
 - optimism_syncStatus ：查询同步状态
 - admin_sequencerActive： 查询 sequencer 是否活动
 - optimism_rollupConfig: 查看 l2 配置
-
+- optimism_outputAtBlock: 查看 block 输出信息
 # 调试 op-node
 
 对 op-node 增加了调试功能，分别修改了 docker file 和 starlark 文件。
@@ -78,8 +78,12 @@ ssh -L 2345:localhost:33162 root@47.83.15.87 -N
 
 1. [max_sequencer_drift](https://specs.optimism.io/protocol/derivation.html): 用于限制 sequencer 能领先 L1 的最大时间长度。也就是 L2 head 能领先 L1 orgin 的最大时长。[maxSequencerDriftFjord](https://github.com/wangdayong228/optimism/blob/284913be5aafcf69d18e3508c5e44da7df9fcd76/op-node/rollup/chain_spec.go#L31)为常量，在Fjord分叉后，就不能通过配置读取了，固定值为 1800 秒。
 2. withdraw 交易的机制与 OptimismPortal 合约的版本`OptimismPortal.version()`有关，版本小于 3 时使用 l2OutputOracle 获取输出根，>=3 时使用 DisputeGameFactory 机制。（具体细节还未深究）
-3. 争议游戏使用合约为：PermissionedDisputeGame
+3. withdraw 交易的争议游戏使用合约为：PermissionedDisputeGame
 4. op-deploy init 创建部署配置，kurtosis 使用的op-deploy版本为v0.0.12, 执行的命令为`op-deployer init --intent-config-type custom --l1-chain-id $L1_CHAIN_ID --l2-chain-ids 2151908 --workdir /network-data`
+5. [Sequencer.nextAction](https://github.com/ethereum-optimism/optimism/blob/76b92d861722395c6a3a2bc3581699e635ac313b/op-node/rollup/sequencing/sequencer.go#L111) 表示下一个出块时间。日志中“Sequencer action schedule changed”可以看到下一个出块时间还有多久。如果出块慢了wait 可能会是一个比较大的负数。再通过日志可以分析慢的原因。
+6. Execution Engine-API 指 op-geth 的 api
+7. 每个 L2 区块的第一笔交易都是 L1 Info Transaction，用于关联L1区块。在[PreparePayloadAttributes](https://github.com/ethereum-optimism/optimism/blob/76b92d861722395c6a3a2bc3581699e635ac313b/op-node/rollup/derive/attributes.go#L138)中创建该交易。每隔 1 小时 reorg 就是关联的 L1 区块信息不匹配导致。
+8. `op-deploy apply` 设置 L2 引用的 L1 Block 代码为[SetStartBlockLiveStrategy](https://github.com/ethereum-optimism/optimism/blob/2ad31dfa6f76a0727b8616f28588f58ffa79773c/op-deployer/pkg/deployer/pipeline/start_block.go#L38)。 会保存到 state.json 中的 `opChainDeployments.startBlock`。
 
 # 修改
 
@@ -295,6 +299,7 @@ WARN [03-21|10:28:59.948] Revert                                   addr=0xcd6473
 8. op-challenger 用到了 batch rpc，适配 rpc proxy 解决中
 9. 在 47.83.15.87 机器上， prometheus 服务启动超时，修改[prometheus.yml.tmpl](https://github.com/wangdayong228/prometheus-package/blob/main/static-files/prometheus.yml.tmpl)模板，删除 `fallback_scrape_protocol` 解决。
 10. 启动一段时间后无法打包交易（包括L1跨链L2， L2 普通交易），发现问题所在点为设置 L2 的 L1 origin 时获取到的 nextOrign 始终是一个固定值。根本原因是l1产生区块太快，而l2出块时间是 2 秒，而每个块在更新 l1 origin时，只是+1递增的更新，就会导致差距越来越大。所以现在修改l1跟l2的出块都为 1 秒。 l2通过配置完成：`optimism_package.chains[0].participants[0].network_params.seconds_per_slot: 1`
+11. 设置l2出块时间 1 秒，但实际上出块慢，发现是 rpc 响应太慢导致的。将 jsonrpc-proxy 修改为使用 sqlite 存储 blockhash 映射解决。
 
 
 # 需要注意的点
