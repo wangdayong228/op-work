@@ -82,7 +82,7 @@ ssh -L 2345:localhost:33162 root@47.83.15.87 -N
 4. op-deploy init 创建部署配置，kurtosis 使用的op-deploy版本为v0.0.12, 执行的命令为`op-deployer init --intent-config-type custom --l1-chain-id $L1_CHAIN_ID --l2-chain-ids 2151908 --workdir /network-data`
 5. [Sequencer.nextAction](https://github.com/ethereum-optimism/optimism/blob/76b92d861722395c6a3a2bc3581699e635ac313b/op-node/rollup/sequencing/sequencer.go#L111) 表示下一个出块时间。日志中“Sequencer action schedule changed”可以看到下一个出块时间还有多久。如果出块慢了wait 可能会是一个比较大的负数。再通过日志可以分析慢的原因。
 6. Execution Engine-API 指 op-geth 的 api
-7. 每个 L2 区块的第一笔交易都是 L1 Info Transaction，用于关联L1区块。在[PreparePayloadAttributes](https://github.com/ethereum-optimism/optimism/blob/76b92d861722395c6a3a2bc3581699e635ac313b/op-node/rollup/derive/attributes.go#L138)中创建该交易。每隔 1 小时 reorg 就是关联的 L1 区块信息不匹配导致。
+7. 每个 L2 区块的第一笔交易都是 L1 Info Transaction，用于关联L1区块。在[PreparePayloadAttributes](https://github.com/ethereum-optimism/optimism/blob/76b92d861722395c6a3a2bc3581699e635ac313b/op-node/rollup/derive/attributes.go#L138)中创建该交易。每隔 1 小时 [reorg](#l2-reorg-日志) 就是关联的 L1 区块信息不匹配导致。
 8. `op-deploy apply` 设置 L2 引用的 L1 Block 代码为[SetStartBlockLiveStrategy](https://github.com/ethereum-optimism/optimism/blob/2ad31dfa6f76a0727b8616f28588f58ffa79773c/op-deployer/pkg/deployer/pipeline/start_block.go#L38)。 会保存到 state.json 中的 `opChainDeployments.startBlock`。
 
 # 修改
@@ -178,7 +178,9 @@ contract_deployer.star:113 文件增加了
 ```
 
 
-# 启动 jsonrpc-proxy
+# 部署
+
+## 启动 jsonrpc-proxy
 
 op-stack 在 cfx espace testnet 发交易时会因为 gas limit 太大（>1500万）的问题导致交易不打包（辰星说需要调高 gas price 到 10 倍以上才行）。
 
@@ -206,9 +208,9 @@ pm2 restart ecfx-test-eth-gas
 JSONRPC_URL=http://47.83.15.87 PORTS=3031 CORRECT_BLOCK_HASH=true pm2 restart ecfx-test-eth-gas --update-env
 ```
 
-# kurtosis 中需要充钱的地址
+## kurtosis 中需要充钱的地址
 
-## deploy-cfx 使用外部 l1 时
+### deploy-cfx 使用外部 l1 时
 cfx-espace-l1-genesis-admin: 9a6d3ba2b0c7514b16a006ee605055d71b9edfad183aeb2d9790e9d4ccced471 0x0e768D12395C8ABFDEdF7b1aEB0Dd1D27d5E2A7F
 
 **配置中l1发交易使用地址**
@@ -223,7 +225,7 @@ address: 0x65D08a056c17Ae13370565B04cF77D2AfA1cB9FA
 **kurtosis脚本中 hard code 的 faucet 账户**
 手动充 1000eth 到 0xafF0CA253b97e54440965855cec0A8a2E2399896
 
-## 通用
+### 通用
 
 **kurtosis脚本中 hard code 了 faucet 账户**
 
@@ -234,13 +236,6 @@ address: 0x65D08a056c17Ae13370565B04cF77D2AfA1cB9FA
 **梓涵测试跨链的地址**
 
 - l2: 0x180F2613c52c903A0d79B8025D8B14e461b22eF1
-
-# 关键日志
-
-**桥接 eth 到 l2**
-
-从 kurtosis 部署 log 中查 l1 bridge 地址:
-Begin your L2 adventures by depositing some L1 Kurtosis ETH to: 0xb398266ae3269a1eb57346870abfcbf71b5097a9
 
 
 # cast 命令
@@ -256,6 +251,12 @@ cast send --private-key 0xbcdf20249abf0ed6d944c0288fad489e33f66b3960d9e6229c1cd2
 
 # 查 balance
 cast balance --rpc-url $op_l2_rpc  0x8943545177806ED17B9F23F0a21ee5948eCaa776
+```
+
+# kurtosis 常用命令
+```sh
+# 查看所有错误日志
+kurtosis service logs -f -a op-cfx | grep error
 ```
 
 # 容器 image
@@ -305,13 +306,14 @@ WARN [03-21|10:28:59.948] Revert                                   addr=0xcd6473
 # 需要注意的点
 1. L2->L1 提现时，是将 OptimismPortal 合约的ETH 转账给接收者，如果余额不足，该合约调用也不会失败，值是会发一个事件，且不能再提现。 所以需要先从 L1->L2，再提现。（或者充值 eth到 OptimismPortal）
 
-# kurtosis 常用命令
-```sh
-# 查看所有错误日志
-kurtosis service logs -f -a op-cfx | grep error
-```
+
 
 # 涉及的 log
+
+### **桥接 eth 到 l2**
+
+从 kurtosis 部署 log 中查 l1 bridge 地址:
+Begin your L2 adventures by depositing some L1 Kurtosis ETH to: 0xb398266ae3269a1eb57346870abfcbf71b5097a9
 
 ### op-batch panic
 ```log
@@ -352,4 +354,13 @@ kurtosis service logs -f -a op-cfx | grep error
 [op-batcher-op-kurtosis] github.com/ethereum-optimism/optimism/op-batcher/batcher.(*BatchSubmitter).publishingLoop(0xc000124340, {0x13f2238, 0xc00017e4b0}, 0x0?, 0xc0001083c0, 0xc000108480)
 [op-batcher-op-kurtosis]        /app/op-batcher/batcher/driver.go:467 +0x1d9
 [op-batcher-op-kurtosis] created by github.com/ethereum-optimism/optimism/op-b
+```
+
+### op-batch submit batch tx 失败
+```log
+t=2025-05-18T10:19:22+0000 lvl=warn msg="Failed to create a transaction, will retry" service=batcher err="failed to call: not enough gas limit with respected to tx size: expected 6054900 got 4871880, reason: <nil>" stack="goroutine 37 [running]:\nruntime/debug.Stack()\n\t/usr/local/go/src/runtime/debug/stack.go:24 +0x5e\ngithub.com/ethereum-optimism/optimism/op-service/txmgr.(*SimpleTxManager).prepare.func1()\n\t/app/op-service/txmgr/txmgr.go:328 +0x8a\ngithub.com/ethereum-optimism/optimism/op-service/retry.Do[...].func1()\n\t/app/op-service/retry/operation.go:44 +0x22\ngithub.com/ethereum-optimism/optimism/op-service/retry.Do0({0x13f24f8, 0xc00007f900}, 0x1e, {0x13ea740, 0xc0012d7660}, 0xc00068f780)\n\t/app/op-service/retry/operation.go:65 +0xf2\ngithub.com/ethereum-optimism/optimism/op-service/retry.Do[...]({0x13f24f8?, 0xc00007f900?}, 0x10?, {0x13ea740?, 0xc0012d7660?}, 0x0?)\n\t/app/op-service/retry/operation.go:47 +0x7a\ngithub.com/ethereum-optimism/optimism/op-service/txmgr.(*SimpleTxManager).prepare(0xc00078e1b0, {0x13f24f8, 0xc00007f900}, {{0xc00151c000, 0xec85, 0xec85}, {0x0, 0x0, 0x0}, 0xc0001e0520, ...})\n\t/app/op-service/txmgr/txmgr.go:322 +0x110\ngithub.com/ethereum-optimism/optimism/op-service/txmgr.(*SimpleTxManager).SendAsync(0xc00078e1b0, {0x13f24f8?, 0xc00007f860?}, {{0xc00151c000, 0xec85, 0xec85}, {0x0, 0x0, 0x0}, 0xc0001e0520, ...}, ...)\n\t/app/op-service/txmgr/txmgr.go:292 +0xfe\ngithub.com/ethereum-optimism/optimism/op-service/txmgr.(*Queue[...]).Send(0x13f9d80, {{0xc000d151d0, 0x458249?, 0x12?}, 0xa0?, 0xac?}, {{0xc00151c000, 0xec85, 0xec85}, {0x0, ...}, ...}, ...)\n\t/app/op-service/txmgr/queue.go:83 +0x1ea\ngithub.com/ethereum-optimism/optimism/op-batcher/batcher.(*BatchSubmitter).sendTx(0xc0001124e0, {{0xc000b22240, 0x1, 0x1}, 0x0}, 0x0, 0xc00007f810, {0x13ea040, 0xc0001d6960}, 0xc00025c780)\n\t/app/op-batcher/batcher/driver.go:901 +0x2da\ngithub.com/ethereum-optimism/optimism/op-batcher/batcher.(*BatchSubmitter).sendTransaction(0xc0001124e0, {{0xc000b22240, 0x1, 0x1}, 0x0}, 0xc0001d6960, 0xc00025c780, 0x7b7f0c899a0ac25b?)\n\t/app/op-batcher/batcher/driver.go:882 +0x1f3\ngithub.com/ethereum-optimism/optimism/op-batcher/batcher.(*BatchSubmitter).publishTxToL1(0xc0001124e0, {0x13f24f8?, 0xc000114eb0?}, 0xc0001d6960, 0xc00025c780, 0xc00019a300)\n\t/app/op-batcher/batcher/driver.go:763 +0x43f\ngithub.com/ethereum-optimism/optimism/op-batcher/batcher.(*BatchSubmitter).publishStateToL1(0xc0001124e0, {0x13f24f8, 0xc000114eb0}, 0xc0001d6960, 0xc00025c780, 0xc00019a300)\n\t/app/op-batcher/batcher/driver.go:686 +0xb7\ngithub.com/ethereum-optimism/optimism/op-batcher/batcher.(*BatchSubmitter).publishingLoop(0xc0001124e0, {0x13f24f8, 0xc000114eb0}, 0xc0005f2fd0?, 0xc00025c780, 0xc00025c7e0)\n\t/app/op-batcher/batcher/driver.go:467 +0x1d9\ncreated by github.com/ethereum-optimism/optimism/op-batcher/batcher.(*BatchSubmitter).StartBatchSubmitting in goroutine 1\n\t/app/op-batcher/batcher/driver.go:176 +0x578\n"
+```
+### L2 reorg 日志
+```log
+t=2025-05-09T02:19:03+0000 lvl=warn msg="L2 reorg: existing unsafe block does not match derived attributes from L1" err="transaction 0 does not match. 
 ```
