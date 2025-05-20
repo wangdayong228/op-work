@@ -301,7 +301,8 @@ WARN [03-21|10:28:59.948] Revert                                   addr=0xcd6473
 9. 在 47.83.15.87 机器上， prometheus 服务启动超时，修改[prometheus.yml.tmpl](https://github.com/wangdayong228/prometheus-package/blob/main/static-files/prometheus.yml.tmpl)模板，删除 `fallback_scrape_protocol` 解决。
 10. 启动一段时间后无法打包交易（包括L1跨链L2， L2 普通交易），发现问题所在点为设置 L2 的 L1 origin 时获取到的 nextOrign 始终是一个固定值。根本原因是l1产生区块太快，而l2出块时间是 2 秒，而每个块在更新 l1 origin时，只是+1递增的更新，就会导致差距越来越大。所以现在修改l1跟l2的出块都为 1 秒。 l2通过配置完成：`optimism_package.chains[0].participants[0].network_params.seconds_per_slot: 1`
 11. 设置l2出块时间 1 秒，但实际上出块慢，发现是 rpc 响应太慢导致的。将 jsonrpc-proxy 修改为使用 sqlite 存储 blockhash 映射解决。
-
+12. op-batch 在发送 batch 交易时，会 estimate rollup calldata ，当 calldata 字节数大于 400 后 gasLimit 误差会与 eip-7623 越来越大。测试工具见 `jsonrpc-proxy/tools/estimate-compare`。 **conflux-rust 解决中**， 当前在 op-batch 增加参数 `--max-l1-tx-size-bytes=1200` 解决。
+    - a. 当设置 `--max-l1-tx-size-bytes` 为 300时，上传 batch 数据慢于新产生的交易，导致l2 unsafe block 与 safe block 的[差距越来越大](#safe-block-与-unsafe-差距越来越大相关-log)。修改为 1200（op-geth 修改了 FloorDataGas翻倍） 后差距一直保持在 12。当l2交易数量增大时，该值将会远远不够，所以根本上需要l1解决。
 
 # 需要注意的点
 1. L2->L1 提现时，是将 OptimismPortal 合约的ETH 转账给接收者，如果余额不足，该合约调用也不会失败，值是会发一个事件，且不能再提现。 所以需要先从 L1->L2，再提现。（或者充值 eth到 OptimismPortal）
@@ -364,3 +365,26 @@ t=2025-05-18T10:19:22+0000 lvl=warn msg="Failed to create a transaction, will re
 ```log
 t=2025-05-09T02:19:03+0000 lvl=warn msg="L2 reorg: existing unsafe block does not match derived attributes from L1" err="transaction 0 does not match. 
 ```
+
+### safe block 与 unsafe 差距越来越大相关 log
+t=2025-05-20T10:15:44+0000 lvl=info msg="Created channel" id=d43c1d2dd4e3ce9d746be3770ad3c140 l1Head=0x86be0008f34ece51ca4c56543d98f9805a4e64265f85b5a0b02d8bcd6bfb3fb4:86584 blocks_pending=3538 l1OriginLastSubmittedChannel=0x6bf450cf5ab0152584fdd5294e5f828a35531ff14525e745551c1a70b43c1a09:82975 batch_type=0 compression_algo=zlib target_num_frames=1 max_frame_size=499 use_blobs=false
+t=2025-05-20T10:15:44+0000 lvl=info msg="Channel closed" id=d43c1d2dd4e3ce9d746be3770ad3c140 blocks_pending=3533 num_frames=1 input_bytes=486 output_bytes=433 oldest_l1_origin=0x6f56bc2a09aab74e3b66f7d17fe6e6636675c57b68b5edcfac7ec69c972849e4:82983 l1_origin=0xbb92be8a20d671b325c5810ea225920390fc8b16ea01555dbb6389fa6d630dec:82987 oldest_l2=0xeca6883c43b57246a057cbccea66e72fcc4b7da1965aa57c6e1d8d29c69966fe:3373 latest_l2=0xfcd302aadf20cec88a0d48cb9fdaeb64986e8c184427e02f5df58a19aa402245:3377 full_reason="channel full: compressor is full" compr_ratio=0.8909465020576132
+t=2025-05-20T10:15:44+0000 lvl=info msg="Building Calldata transaction candidate" size=434
+t=2025-05-20T10:15:45+0000 lvl=info msg="Added L2 block to local state" block=0xaab35f77cfc8a22137ee1ca686863c3ded102ead0a88ff9651062faa9040d895:6911 tx_count=1 time=1747736145
+t=2025-05-20T10:15:46+0000 lvl=info msg="Added L2 block to local state" block=0x49e3f1f56e8cac55f72b1157652000edcaa3e98956911db45d47155c8f0a7fd8:6912 tx_count=1 time=1747736146
+t=2025-05-20T10:15:47+0000 lvl=info msg="Added L2 block to local state" block=0xb5e16135d6defe090d72d44dd09cd7b8e33b6d7e9eb766504e74d1fa50aad128:6913 tx_count=1 time=1747736147
+t=2025-05-20T10:15:48+0000 lvl=info msg="Added L2 block to local state" block=0x31b0cd3069a4493c3849b75aa2a3d4917f768a206d4dcdd9b321fb5a31542f6e:6914 tx_count=1 time=1747736148
+t=2025-05-20T10:15:49+0000 lvl=info msg="Added L2 block to local state" block=0x388fe616ec510899368e0344929f1cc721cafbc01fe0a42ef89ab7f2d1f908aa:6915 tx_count=1 time=1747736149
+t=2025-05-20T10:15:50+0000 lvl=info msg="Added L2 block to local state" block=0x19cc8b114ed8e66e1eb6b78bfdc146b5587b5975a5c580dc0fe57caca590874f:6916 tx_count=1 time=1747736150
+t=2025-05-20T10:15:51+0000 lvl=info msg="Added L2 block to local state" block=0x9551f875554facec011eee4dbecd649dbf1bf5283f7a9e2cbe8cf517ad0c2177:6917 tx_count=1 time=1747736151
+t=2025-05-20T10:15:52+0000 lvl=info msg="Added L2 block to local state" block=0x13637861fe05ee9414d221f7735ee78d59fb226518b5acf84337d04561330ba1:6918 tx_count=1 time=1747736152
+t=2025-05-20T10:15:53+0000 lvl=info msg="Added L2 block to local state" block=0xf82b6d2d63adb30b910c712948670a7137f3b55da7ed0254ad5a857cec13d065:6919 tx_count=1 time=1747736153
+t=2025-05-20T10:15:54+0000 lvl=info msg="Added L2 block to local state" block=0xe1e4be63f07b49a9ae0c148c84fb6af04b289856aa3a78659a84ac680f04bd36:6920 tx_count=1 time=1747736154
+t=2025-05-20T10:15:55+0000 lvl=info msg="Added L2 block to local state" block=0x2c4ad979ff212ef2d3098b0ec05263eb77f40ab8d95bcc8fc7fd6f4605e5f362:6921 tx_count=1 time=1747736155
+t=2025-05-20T10:15:56+0000 lvl=info msg="Added L2 block to local state" block=0xf1a5e29bd0c4b6a30dc976790b2d4e6e29634564727b192adb0108acd346126c:6922 tx_count=1 time=1747736156
+t=2025-05-20T10:15:56+0000 lvl=info msg="Transaction confirmed" service=batcher tx=0x19875a0894ed3f45bd6ffad6cd95d3a02c3828ad1a9dd0285714487d8346bf51 block=0xbebae6e8405f76b10f9546f71f46c91d820bbbd8b04ea0b0a6a31a5311ebd0d4:86590 effectiveGasPrice=1000000001
+t=2025-05-20T10:15:56+0000 lvl=info msg="Handling receipt" id=280fd34650c6ebebade99501fdeb6962:0
+t=2025-05-20T10:15:56+0000 lvl=info msg="Transaction confirmed" tx_id=280fd34650c6ebebade99501fdeb6962:0 tx=0x19875a0894ed3f45bd6ffad6cd95d3a02c3828ad1a9dd0285714487d8346bf51 block=0xbebae6e8405f76b10f9546f71f46c91d820bbbd8b04ea0b0a6a31a5311ebd0d4:86590
+t=2025-05-20T10:15:56+0000 lvl=info msg="Channel is fully submitted" id=280fd34650c6ebebade99501fdeb6962 min_inclusion_block=86590 max_inclusion_block=86590
+t=2025-05-20T10:15:56+0000 lvl=info msg="Publishing transaction" service=batcher tx=0xa0c6d528d68d908e016b45640158e4481e1714d2d32cf56dd8d7cb1087f8fcf2 nonce=603 gasTipCap=1000000000 gasFeeCap=3000000000 gasLimit=76120 to=0x00a4FE4C6AaA0729d7699c387E7f281DD64aFA2a
+t=2025-05-20T10:15:56+0000 lvl=info msg="Transaction successfully published" service=batcher tx=0xa0c6d528d68d908e016b45640158e4481e1714d2d32cf56dd8d7cb1087f8fcf2 nonce=603 gasTipCap=1000000000 gasFeeCap=3000000000 gasLimit=76120 to=0x00a4FE4C6AaA0729d7699c387E7f281DD64aFA2a from=0xD3F2c5AFb2D76f5579F326b0cD7DA5F5a4126c35 tx=0xa0c6d528d68d908e016b45640158e4481e1714d2d32cf56dd8d7cb1087f8fcf2

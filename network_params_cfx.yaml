@@ -37,7 +37,7 @@ optimism_package:
         fund_dev_accounts: true
       batcher_params:
         image: "us-docker.pkg.dev/oplabs-tools-artifacts/images/op-batcher:local"
-        extra_params: [--data-availability-type=calldata]
+        extra_params: [--data-availability-type=calldata,--max-l1-tx-size-bytes=1200]
       challenger_params:
         enabled: true
         extra_params: []
