@@ -62,7 +62,33 @@ Private Key 10: 0x850643a0224065ecce3882673c21f56bcf6eef86274cc21cadff15930b59fc
 - admin_sequencerActive： 查询 sequencer 是否活动
 - optimism_rollupConfig: 查看 l2 配置
 - optimism_outputAtBlock: 查看 block 输出信息
-# 调试 op-node
+
+# 启动组件服务与远程调试
+## 启动 op-batch
+根据 deploy-conflux.log 可以得到如下 op-batch 启动命令
+```sh
+go run ./op-batcher/cmd \
+--l2-eth-rpc=$opc_l2_rpc \
+--rollup-rpc=$opc_l2_cl_rpc \
+--poll-interval=1s \
+--sub-safety-margin=6 \
+--num-confirmations=1 \
+--safe-abort-nonce-too-low-count=3 \
+--resubmission-timeout=30s \
+--rpc.addr=0.0.0.0 \
+--rpc.port=8548 \
+--rpc.enable-admin \
+--max-channel-duration=1 \
+--l1-eth-rpc=$opc_l1_rpc \
+--private-key=0xb3d2d558e3491a3709b7c451100a0366b5872520c7aa020c17a0e7fa35b6a8df \
+--altda.enabled=False \
+--metrics.enabled \
+--metrics.addr=0.0.0.0 \
+--metrics.port=9001 \
+--data-availability-type=calldata \
+--max-l1-tx-size-bytes=500 # 该 option 用于绕过 l1 gas 没有对齐的问题，目前可以去掉
+```
+## 远程调试 op-node
 
 对 op-node 增加了调试功能，分别修改了 docker file 和 starlark 文件。
 
@@ -73,6 +99,67 @@ Private Key 10: 0x850643a0224065ecce3882673c21f56bcf6eef86274cc21cadff15930b59fc
 ssh -L 2345:localhost:33162 root@47.83.15.87 -N
 ```
 2. 本地 vscode 启动调试，配置见 `optimism/.vsode/launch.json`
+
+
+# 部署
+
+## 启动 jsonrpc-proxy
+
+op-stack 在 cfx espace testnet 发交易时会因为 gas limit 太大（>1500万）的问题导致交易不打包（辰星说需要调高 gas price 到 10 倍以上才行）。
+
+所以当前使用与 ethereum 相同 gas 版本的 conflux-rust 作为 l1 节点。
+
+op-node 会检查 block hash 是否正确，由于conflux 的 block hash 与 ethereum 计算方式不一致，导致大量检查失败，当前已适配为 
+- block 相关 rpc 返回 ethereum 计算的 block hash。
+- eth_getBalance/eth_getCode/eth_getBlockReceipts 等 rpc 会将 block hash 参数替换为 block number
+
+
+**启动命令**
+
+`CORRECT_BLOCK_HASH=true` 表示适配为 ethereum block hash
+
+```sh
+JSONRPC_URL=http://47.83.15.87 PORTS=3031 CORRECT_BLOCK_HASH=true pm2 start "node ." --name ecfx-test-eth-gas
+```
+**重启命令**
+```sh
+pm2 restart ecfx-test-eth-gas
+```
+
+**更新环境变量**
+```sh
+JSONRPC_URL=http://47.83.15.87 PORTS=3031 CORRECT_BLOCK_HASH=true pm2 restart ecfx-test-eth-gas --update-env
+```
+
+## kurtosis 中需要充钱的地址
+
+### deploy-cfx 使用外部 l1 时
+cfx-espace-l1-genesis-admin: 9a6d3ba2b0c7514b16a006ee605055d71b9edfad183aeb2d9790e9d4ccced471 0x0e768D12395C8ABFDEdF7b1aEB0Dd1D27d5E2A7F
+
+**配置中l1发交易使用地址**
+
+privateKey: 0x850643a0224065ecce3882673c21f56bcf6eef86274cc21cadff15930b59fc8c
+address: 0x65D08a056c17Ae13370565B04cF77D2AfA1cB9FA
+
+**l1部署合约会用到的地址**
+
+手动充 1000eth 到 0xd8f3183def51a987222d845be228e0bbb932c222 
+
+**kurtosis脚本中 hard code 的 faucet 账户**
+手动充 1000eth 到 0xafF0CA253b97e54440965855cec0A8a2E2399896
+
+### 通用
+
+**kurtosis脚本中 hard code 了 faucet 账户**
+
+代码： `optimism-package/static_files/scripts/fund.sh:62`
+- l1FaucetAddress: 0xafF0CA253b97e54440965855cec0A8a2E2399896
+- l2FaucetAddress: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+
+**梓涵测试跨链的地址**
+
+- l2: 0x180F2613c52c903A0d79B8025D8B14e461b22eF1
+
 
 # 关键代码
 
@@ -177,68 +264,29 @@ contract_deployer.star:113 文件增加了
         }
 ```
 
+# 遇到的问题
+1. op-deployer部署合约问题，参见 [misc](#misc)
+2. block hash 校验失败问题，通过 rpc proxy 增加 `eth block hash -> cfx block hash 映射` 适配解决
+3. eth_getBalance 等 rpc 参数为 block hash 时，conflux 不支持，通过 rpc proxy 适配解决
+4. op-node 中会检查  L1 block 的 parent hash，通过 rpc proxy 适配解决，需要重新 `make op-node-docker`
+5. op-batcher 由于 blobGasFee 为 nil 导致 panic，设置为 nil 则返回1，log见 [op-batch panic](#op-batch-panic)
+6. 默认op-batcher发送 batch 到 l1 时为 blob 交易，修改 `network_params.yaml`中 op-batcher 启动参数配置`--data-availability-type=calldata`
+7. op-batcher 发送 calldata 交易到 l1 时 gas 计算为 `op-geth/core/state_transition.go FloorDataGas`， 计算结果小于 conflux 链实际需要，修改为 2 倍解决。(optimize 的 go.mod 需要设置 replace 再 build)
+   1. 2025.5.21 更新： conflux-rust 已修正 align-evm 问题，现在使用默认 op-geth 即可。
+8. op-challenger 用到了 batch rpc，适配 rpc proxy 解决中
+9.  在 47.83.15.87 机器上， prometheus 服务启动超时，修改[prometheus.yml.tmpl](https://github.com/wangdayong228/prometheus-package/blob/main/static-files/prometheus.yml.tmpl)模板，删除 `fallback_scrape_protocol` 解决。
+10. 启动一段时间后无法打包交易（包括L1跨链L2， L2 普通交易），发现问题所在点为设置 L2 的 L1 origin 时获取到的 nextOrign 始终是一个固定值。根本原因是l1产生区块太快，而l2出块时间是 2 秒，而每个块在更新 l1 origin时，只是+1递增的更新，就会导致差距越来越大。所以现在修改l1跟l2的出块都为 1 秒。 l2通过配置完成：`optimism_package.chains[0].participants[0].network_params.seconds_per_slot: 1`
+11. 设置l2出块时间 1 秒，但实际上出块慢，发现是 rpc 响应太慢导致的。将 jsonrpc-proxy 修改为使用 sqlite 存储 blockhash 映射解决。
+12. op-batch 在发送 batch 交易时，会 estimate rollup calldata ，当 calldata 字节数大于 400 后 gasLimit 误差会与 eip-7623 越来越大。测试工具见 `jsonrpc-proxy/tools/estimate-compare`。 **conflux-rust 解决中**， 当前在 op-batch 增加参数 `--max-l1-tx-size-bytes=1200` 解决。
+    - a. 当设置 `--max-l1-tx-size-bytes` 为 300时，上传 batch 数据慢于新产生的交易，导致l2 unsafe block 与 safe block 的[差距越来越大](#safe-block-与-unsafe-差距越来越大相关-log)。修改为 1200（op-geth 修改了 FloorDataGas翻倍） 后差距一直保持在 12。当l2交易数量增大时，该值将会远远不够，所以根本上需要l1解决。
+    - b. 2025.5.21更新：conflux-rust 已修正 align-evm 问题，去掉`--max-l1-tx-size-bytes`选项保证 batch 交易上传 最大效率。
 
-# 部署
+# 需要注意的点
+1. L2->L1 提现时，是将 OptimismPortal 合约的ETH 转账给接收者，如果余额不足，该合约调用也不会失败，值是会发一个事件，且不能再提现。 所以需要先从 L1->L2，再提现。（或者充值 eth到 OptimismPortal）
 
-## 启动 jsonrpc-proxy
+# 命令
 
-op-stack 在 cfx espace testnet 发交易时会因为 gas limit 太大（>1500万）的问题导致交易不打包（辰星说需要调高 gas price 到 10 倍以上才行）。
-
-所以当前使用与 ethereum 相同 gas 版本的 conflux-rust 作为 l1 节点。
-
-op-node 会检查 block hash 是否正确，由于conflux 的 block hash 与 ethereum 计算方式不一致，导致大量检查失败，当前已适配为 
-- block 相关 rpc 返回 ethereum 计算的 block hash。
-- eth_getBalance/eth_getCode/eth_getBlockReceipts 等 rpc 会将 block hash 参数替换为 block number
-
-
-**启动命令**
-
-`CORRECT_BLOCK_HASH=true` 表示适配为 ethereum block hash
-
-```sh
-JSONRPC_URL=http://47.83.15.87 PORTS=3031 CORRECT_BLOCK_HASH=true pm2 start "node ." --name ecfx-test-eth-gas
-```
-**重启命令**
-```sh
-pm2 restart ecfx-test-eth-gas
-```
-
-**更新环境变量**
-```sh
-JSONRPC_URL=http://47.83.15.87 PORTS=3031 CORRECT_BLOCK_HASH=true pm2 restart ecfx-test-eth-gas --update-env
-```
-
-## kurtosis 中需要充钱的地址
-
-### deploy-cfx 使用外部 l1 时
-cfx-espace-l1-genesis-admin: 9a6d3ba2b0c7514b16a006ee605055d71b9edfad183aeb2d9790e9d4ccced471 0x0e768D12395C8ABFDEdF7b1aEB0Dd1D27d5E2A7F
-
-**配置中l1发交易使用地址**
-
-privateKey: 0x850643a0224065ecce3882673c21f56bcf6eef86274cc21cadff15930b59fc8c
-address: 0x65D08a056c17Ae13370565B04cF77D2AfA1cB9FA
-
-**l1部署合约会用到的地址**
-
-手动充 1000eth 到 0xd8f3183def51a987222d845be228e0bbb932c222 
-
-**kurtosis脚本中 hard code 的 faucet 账户**
-手动充 1000eth 到 0xafF0CA253b97e54440965855cec0A8a2E2399896
-
-### 通用
-
-**kurtosis脚本中 hard code 了 faucet 账户**
-
-代码： `optimism-package/static_files/scripts/fund.sh:62`
-- l1FaucetAddress: 0xafF0CA253b97e54440965855cec0A8a2E2399896
-- l2FaucetAddress: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
-
-**梓涵测试跨链的地址**
-
-- l2: 0x180F2613c52c903A0d79B8025D8B14e461b22eF1
-
-
-# cast 命令
+## cast 命令
 
 当前在宿主机配置了 l1 rpc, l2 rpc, l1 bridge 等环境变量到 `~/.bashrc`; cast 命令中直接使用环境变量即可
 
@@ -253,10 +301,22 @@ cast send --private-key 0xbcdf20249abf0ed6d944c0288fad489e33f66b3960d9e6229c1cd2
 cast balance --rpc-url $op_l2_rpc  0x8943545177806ED17B9F23F0a21ee5948eCaa776
 ```
 
-# kurtosis 常用命令
+## kurtosis 常用命令
 ```sh
 # 查看所有错误日志
 kurtosis service logs -f -a op-cfx | grep error
+```
+
+# MISC
+op-deployer 部署合约时，如下错误是合约版本不一致导致的。
+
+下面错误是在**本地**而不是 kurtosis运行 op-deployer时报的错，可能是由于 本地的bedrock-contracts 版本与 kurtosis 里使用的不一致
+```sh
+WARN [03-21|10:28:59.948] callframe                                depth=1 byte4=0x522bb704 addr=0xcd6473be2560AcE97068062df850E6f6e6871066 callsite= label=SetDisputeGameImpl
+WARN [03-21|10:28:59.948] Revert                                   addr=0xcd6473be2560AcE97068062df850E6f6e6871066 label=SetDisputeGameImpl err="execution reverted" revertMsg="unrecognized 4 byte signature: 6425666b" depth=1
+WARN [03-21|10:28:59.948] Fault                                    addr=0xcd6473be2560AcE97068062df850E6f6e6871066 label=SetDisputeGameImpl err="execution reverted" depth=1
+WARN [03-21|10:28:59.948] callframe                                depth=1 byte4=0x522bb704 addr=0xcd6473be2560AcE97068062df850E6f6e6871066 callsite= label=SetDisputeGameImpl
+WARN [03-21|10:28:59.948] Revert                                   addr=0xcd6473be2560AcE97068062df850E6f6e6871066 label=SetDisputeGameImpl err="execution reverted" revertMsg="unrecognized 4 byte 
 ```
 
 # 容器 image
@@ -275,38 +335,6 @@ kurtosis service logs -f -a op-cfx | grep error
 | protolambda/eth2-val-tools:latest                                       | validator-key-generation-cl-validator-keystore--e60e16148d3c40ee93eb2ff2a5c2e30a |
 | kurtosistech/core:2.1.0                                                 | kurtosis-api--699533db8c2f42d583c449fabe58a74d             |
 | fluent/fluent-bit:1.9.7                                                 | kurtosis-logs-collector--699533db8c2f42d583c449fabe58a74d  |
-
-
-# MISC
-op-deployer 部署合约时，如下错误是合约版本不一致导致的。
-
-下面错误是在**本地**而不是 kurtosis运行 op-deployer时报的错，可能是由于 本地的bedrock-contracts 版本与 kurtosis 里使用的不一致
-```sh
-WARN [03-21|10:28:59.948] callframe                                depth=1 byte4=0x522bb704 addr=0xcd6473be2560AcE97068062df850E6f6e6871066 callsite= label=SetDisputeGameImpl
-WARN [03-21|10:28:59.948] Revert                                   addr=0xcd6473be2560AcE97068062df850E6f6e6871066 label=SetDisputeGameImpl err="execution reverted" revertMsg="unrecognized 4 byte signature: 6425666b" depth=1
-WARN [03-21|10:28:59.948] Fault                                    addr=0xcd6473be2560AcE97068062df850E6f6e6871066 label=SetDisputeGameImpl err="execution reverted" depth=1
-WARN [03-21|10:28:59.948] callframe                                depth=1 byte4=0x522bb704 addr=0xcd6473be2560AcE97068062df850E6f6e6871066 callsite= label=SetDisputeGameImpl
-WARN [03-21|10:28:59.948] Revert                                   addr=0xcd6473be2560AcE97068062df850E6f6e6871066 label=SetDisputeGameImpl err="execution reverted" revertMsg="unrecognized 4 byte 
-```
-
-# 遇到的问题
-1. op-deployer部署合约问题，参见 misc
-2. block hash 校验失败问题，通过 rpc proxy 适配解决
-3. eth_getBalance 等 rpc 参数为 block hash 时，conflux 不支持，通过 rpc proxy 适配解决
-4. op-node 中会检查  L1 block 的 parent hash，通过修改代码跳过检查解决，需要重新 `make op-node-docker`
-5. op-batcher 由于 blobGasFee 为 nil 导致 panic，设置为 nil 则返回1，log见 [op-batch panic](#op-batch-panic)
-6. 默认op-batcher发送 batch 到 l1 时为 blob 交易，修改 `network_params.yaml`中 op-batcher 启动参数配置`--data-availability-type=calldata`
-7. op-batcher 发送 calldata 交易到 l1 时 gas 计算为 `op-geth/core/state_transition.go FloorDataGas`， 计算结果小于 conflux 链实际需要，修改为 2 倍解决。(optimize 的 go.mod 需要设置 replace 再 build)
-8. op-challenger 用到了 batch rpc，适配 rpc proxy 解决中
-9. 在 47.83.15.87 机器上， prometheus 服务启动超时，修改[prometheus.yml.tmpl](https://github.com/wangdayong228/prometheus-package/blob/main/static-files/prometheus.yml.tmpl)模板，删除 `fallback_scrape_protocol` 解决。
-10. 启动一段时间后无法打包交易（包括L1跨链L2， L2 普通交易），发现问题所在点为设置 L2 的 L1 origin 时获取到的 nextOrign 始终是一个固定值。根本原因是l1产生区块太快，而l2出块时间是 2 秒，而每个块在更新 l1 origin时，只是+1递增的更新，就会导致差距越来越大。所以现在修改l1跟l2的出块都为 1 秒。 l2通过配置完成：`optimism_package.chains[0].participants[0].network_params.seconds_per_slot: 1`
-11. 设置l2出块时间 1 秒，但实际上出块慢，发现是 rpc 响应太慢导致的。将 jsonrpc-proxy 修改为使用 sqlite 存储 blockhash 映射解决。
-12. op-batch 在发送 batch 交易时，会 estimate rollup calldata ，当 calldata 字节数大于 400 后 gasLimit 误差会与 eip-7623 越来越大。测试工具见 `jsonrpc-proxy/tools/estimate-compare`。 **conflux-rust 解决中**， 当前在 op-batch 增加参数 `--max-l1-tx-size-bytes=1200` 解决。
-    - a. 当设置 `--max-l1-tx-size-bytes` 为 300时，上传 batch 数据慢于新产生的交易，导致l2 unsafe block 与 safe block 的[差距越来越大](#safe-block-与-unsafe-差距越来越大相关-log)。修改为 1200（op-geth 修改了 FloorDataGas翻倍） 后差距一直保持在 12。当l2交易数量增大时，该值将会远远不够，所以根本上需要l1解决。
-
-# 需要注意的点
-1. L2->L1 提现时，是将 OptimismPortal 合约的ETH 转账给接收者，如果余额不足，该合约调用也不会失败，值是会发一个事件，且不能再提现。 所以需要先从 L1->L2，再提现。（或者充值 eth到 OptimismPortal）
-
 
 
 # 涉及的 log
