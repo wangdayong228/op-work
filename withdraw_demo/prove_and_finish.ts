@@ -58,13 +58,11 @@ async function proveAndFinish(withdrawTxHash: `0x${string}`) {
     console.log('\n--- 8. 等待提现进入可完成阶段 ---');
     console.log('⏳ 这通常需要 7 天的挑战期...');
     // Wait until the withdrawal is ready to finalize.
-    const finalizeReadyResult = await publicClientL1.waitToFinalize({
+    await publicClientL1.waitToFinalize({
       targetChain: walletClientL2.chain,
       withdrawalHash: withdrawal.withdrawalHash,
     });
     console.log('🔔 提现已进入可完成阶段!');
-    console.log('📄 可完成阶段结果:');
-    console.log(inspect(finalizeReadyResult, { depth: null, colors: true }));
   
     console.log('\n--- 9. 在 L1 完成提现 ---');
     // Finalize the withdrawal.
